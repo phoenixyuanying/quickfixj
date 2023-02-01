@@ -19,57 +19,19 @@
 
 package quickfix.examples.banzai;
 
-import quickfix.Application;
-import quickfix.DefaultMessageFactory;
-import quickfix.DoNotSend;
-import quickfix.FieldNotFound;
-import quickfix.FixVersions;
-import quickfix.IncorrectDataFormat;
-import quickfix.IncorrectTagValue;
-import quickfix.Message;
-import quickfix.RejectLogon;
-import quickfix.Session;
-import quickfix.SessionID;
-import quickfix.SessionNotFound;
-import quickfix.UnsupportedMessageType;
-import quickfix.field.AvgPx;
-import quickfix.field.BeginString;
-import quickfix.field.BusinessRejectReason;
-import quickfix.field.ClOrdID;
-import quickfix.field.CumQty;
-import quickfix.field.CxlType;
-import quickfix.field.DeliverToCompID;
-import quickfix.field.ExecID;
-import quickfix.field.HandlInst;
-import quickfix.field.LastPx;
-import quickfix.field.LastShares;
-import quickfix.field.LeavesQty;
-import quickfix.field.LocateReqd;
-import quickfix.field.MsgSeqNum;
-import quickfix.field.MsgType;
-import quickfix.field.OrdStatus;
-import quickfix.field.OrdType;
-import quickfix.field.OrderQty;
-import quickfix.field.OrigClOrdID;
-import quickfix.field.Price;
-import quickfix.field.RefMsgType;
-import quickfix.field.RefSeqNum;
-import quickfix.field.SenderCompID;
-import quickfix.field.SessionRejectReason;
-import quickfix.field.Side;
-import quickfix.field.StopPx;
-import quickfix.field.Symbol;
-import quickfix.field.TargetCompID;
-import quickfix.field.Text;
-import quickfix.field.TimeInForce;
-import quickfix.field.TransactTime;
+import javafx.util.converter.LocalDateTimeStringConverter;
+import quickfix.*;
+import quickfix.field.*;
+import quickfix.fix43.NewOrderMultileg;
 
 import javax.swing.*;
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Observable;
-import java.util.Observer;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.util.*;
 
 public class BanzaiApplication implements Application {
     private final DefaultMessageFactory messageFactory = new DefaultMessageFactory();
@@ -309,7 +271,8 @@ public class BanzaiApplication implements Application {
                 send41(order);
                 break;
             case FixVersions.BEGINSTRING_FIX42:
-                send42(order);
+//                send42(order);
+                sendMultileg(order);
                 break;
             case FixVersions.BEGINSTRING_FIX43:
                 send43(order);
@@ -345,9 +308,52 @@ public class BanzaiApplication implements Application {
         quickfix.fix42.NewOrderSingle newOrderSingle = new quickfix.fix42.NewOrderSingle(
                 new ClOrdID(order.getID()), new HandlInst('1'), new Symbol(order.getSymbol()),
                 sideToFIXSide(order.getSide()), new TransactTime(), typeToFIXType(order.getType()));
-        newOrderSingle.set(new OrderQty(order.getQuantity()));
+//        newOrderSingle.setField(new Symbol(order.getSymbol()));
+//        newOrderSingle.setField(new Symbol("AAPL"));
+        newOrderSingle.setField(new OrderQty(order.getQuantity()));
+//        newOrderSingle.setField(new CharField(54, Side.BUY));
+//        newOrderSingle.setField(new StringField(54, "1"));
+//        newOrderSingle.setField(new Side(Side.BUY));
+        newOrderSingle.setField(new Account("CS0003"));
+//        newOrderSingle.setField(new StringField(1, "C00003"));
+        newOrderSingle.setField(new SecurityExchange("US"));
 
         send(populateOrder(order, newOrderSingle), order.getSessionID());
+    }
+
+    public void sendMultileg(Order order){
+        quickfix.fix43.NewOrderMultileg multileg = new NewOrderMultileg();
+        multileg.setField(Account.FIELD, new Account("CS0003"));
+        multileg.setField(ClOrdID.FIELD, new ClOrdID(order.getID()));
+        multileg.setField(OrderQty.FIELD, new OrderQty(order.getQuantity()));
+        multileg.setField(OrdType.FIELD, typeToFIXType(order.getType()));
+        multileg.setField(Side.FIELD, sideToFIXSide(order.getSide()));
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-hh:MM:ss.SSS");
+        String dateTimeFormat = now.format(dateTimeFormatter);
+        multileg.setString(TransactTime.FIELD, dateTimeFormat);
+//        multileg.setField(TransactTime.FIELD, new TransactTime(LocalDateTime.now(ZoneOffset.UTC)));
+
+        multileg.setField(SecurityExchange.FIELD, new SecurityExchange("US"));
+
+        //Add leg1
+        NewOrderMultileg.NoLegs noLegs1 = new NewOrderMultileg.NoLegs();
+        noLegs1.setField(LegPositionEffect.FIELD, new LegPositionEffect(PositionEffect.OPEN));
+        noLegs1.setField(LegSymbol.FIELD, new LegSymbol("AAPL"));
+        noLegs1.setField(LegSide.FIELD, new LegSide(Side.BUY));
+        noLegs1.setField(LegRefID.FIELD, new LegRefID("123"));
+        multileg.addGroup(noLegs1);
+
+        //Add leg2
+        NewOrderMultileg.NoLegs noLegs2 = new NewOrderMultileg.NoLegs();
+        noLegs2.setField(LegPositionEffect.FIELD, new LegPositionEffect(PositionEffect.OPEN));
+        noLegs2.setField(LegSymbol.FIELD, new LegSymbol("AAPL"));
+        noLegs2.setField(LegSide.FIELD, new LegSide(Side.BUY));
+        noLegs2.setField(LegRefID.FIELD, new LegRefID("124"));
+        multileg.addGroup(noLegs2);
+
+        send(populateOrder(order, multileg), order.getSessionID());
     }
 
     public void send43(Order order) {
